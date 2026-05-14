@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "Rockie",
+    "slug": "rockie-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "scheme": "rockie",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.pnle.rockie",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Rockie uses your camera to record climbing sessions.",
+        "NSPhotoLibraryUsageDescription": "Rockie accesses your photo library to select climbing videos.",
+        "NSMicrophoneUsageDescription": "Rockie records audio during climbing sessions."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.pnle.rockie",
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_VIDEO",
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Rockie uses your camera to record climbing sessions."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Rockie accesses your photo library to select climbing videos."
+        }
+      ]
+    ]
+  }
+}

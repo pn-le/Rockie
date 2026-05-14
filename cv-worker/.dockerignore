@@ -1,0 +1,15 @@
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+tests/fixtures/
+*.mov
+*.mp4
+*.avi
+*.webm
+/tmp/

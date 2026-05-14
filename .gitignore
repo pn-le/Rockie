@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Test fixture videos — add clips locally, never commit
+cv-worker/tests/fixtures/*.mov
+cv-worker/tests/fixtures/*.mp4
+cv-worker/tests/fixtures/*.avi
+cv-worker/tests/fixtures/*.webm

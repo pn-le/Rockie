@@ -1,4 +1,5 @@
 import { useUser } from "@clerk/clerk-expo";
+import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -6,83 +7,101 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as FileSystem from "expo-file-system";
 import { supabase } from "../../lib/supabase";
 import { triggerAnalysis } from "../../lib/api";
 
-type UploadStep = "idle" | "uploading" | "queued" | "processing" | "done" | "error";
+type Step = "idle" | "uploading" | "processing" | "done" | "error";
+
+function ProgressBar({ progress }: { progress: number }) {
+  return (
+    <View style={{ height: 3, backgroundColor: "#1E1E1E", borderRadius: 2, width: "100%", overflow: "hidden" }}>
+      <View style={{
+        height: "100%",
+        width: `${progress}%`,
+        backgroundColor: "#FF5C00",
+        borderRadius: 2,
+      }} />
+    </View>
+  );
+}
 
 export default function Upload() {
   const { user } = useUser();
   const router = useRouter();
-  const [step, setStep] = useState<UploadStep>("idle");
+  const [step, setStep] = useState<Step>("idle");
   const [progress, setProgress] = useState(0);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
   async function pickAndAnalyze() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Allow access to your photo library to pick a video.");
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["videos"],
       quality: 1,
       videoMaxDuration: 300,
     });
     if (result.canceled) return;
-    const asset = result.assets[0];
-    await runAnalysis(asset.uri);
+    await runAnalysis(result.assets[0].uri);
   }
 
   async function recordAndAnalyze() {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["videos"],
-      videoMaxDuration: 300,
-      quality: 1,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    await runAnalysis(asset.uri);
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Allow camera access to record a climb.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["videos"],
+        videoMaxDuration: 300,
+        quality: 1,
+      });
+      if (result.canceled) return;
+      await runAnalysis(result.assets[0].uri);
+    } catch {
+      Alert.alert("Camera unavailable", "Use 'Pick from library' to select a video instead.");
+    }
   }
 
   async function runAnalysis(localUri: string) {
     if (!user) return;
     setStep("uploading");
-    setProgress(0);
+    setProgress(10);
+    setStatusText("Preparing upload…");
     setErrorMsg("");
 
     try {
       const id = `${user.id}-${Date.now()}`;
-      setJobId(id);
 
-      // Upload to Supabase Storage
       const objectPath = `${user.id}/${id}.mp4`;
-      const fileInfo = await FileSystem.getInfoAsync(localUri);
-      if (!fileInfo.exists) throw new Error("Video file not found");
 
-      const fileContent = await FileSystem.readAsStringAsync(localUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const bytes = Uint8Array.from(atob(fileContent), (c) => c.charCodeAt(0));
+      setProgress(25);
+      setStatusText("Uploading video…");
+      const response = await fetch(localUri);
+      const arrayBuffer = await response.arrayBuffer();
 
-      setProgress(30);
       const { error: uploadError } = await supabase.storage
         .from("climb-videos")
-        .upload(objectPath, bytes, { contentType: "video/mp4", upsert: true });
+        .upload(objectPath, arrayBuffer, { contentType: "video/mp4", upsert: true });
       if (uploadError) throw uploadError;
 
-      setProgress(60);
-
-      // Get signed URL
+      setProgress(55);
+      setStatusText("Getting signed URL…");
       const { data: signedData, error: signError } = await supabase.storage
         .from("climb-videos")
         .createSignedUrl(objectPath, 3600);
       if (signError || !signedData) throw signError ?? new Error("Failed to get signed URL");
 
-      setProgress(80);
-
-      // Create job record
+      setProgress(70);
+      setStatusText("Queuing analysis…");
       await supabase.from("analysis_jobs").insert({
         id,
         user_id: user.id,
@@ -90,17 +109,11 @@ export default function Upload() {
         status: "queued",
       });
 
-      // Trigger CV worker
-      await triggerAnalysis({
-        jobId: id,
-        videoUrl: signedData.signedUrl,
-        userId: user.id,
-      });
+      await triggerAnalysis({ jobId: id, videoUrl: signedData.signedUrl, userId: user.id });
 
-      setProgress(100);
-      setStep("queued");
-
-      // Poll for completion
+      setProgress(85);
+      setStep("processing");
+      setStatusText("Analyzing your climb…");
       pollJob(id);
     } catch (e: any) {
       setErrorMsg(e.message ?? "Something went wrong");
@@ -109,7 +122,6 @@ export default function Upload() {
   }
 
   async function pollJob(id: string) {
-    setStep("processing");
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
@@ -134,62 +146,153 @@ export default function Upload() {
   function reset() {
     setStep("idle");
     setProgress(0);
-    setJobId(null);
+    setStatusText("");
     setErrorMsg("");
   }
 
   if (step !== "idle") {
     return (
-      <SafeAreaView className="flex-1 bg-black items-center justify-center px-6">
-        {(step === "uploading" || step === "queued" || step === "processing") && (
-          <>
-            <ActivityIndicator size="large" color="#22c55e" />
-            <Text className="text-white text-lg font-semibold mt-6">
-              {step === "uploading" ? `Uploading… ${progress}%` : "Analyzing your climb…"}
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0A0A", alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
+        {(step === "uploading" || step === "processing") && (
+          <View style={{ alignItems: "center", width: "100%" }}>
+            <View style={{
+              width: 72, height: 72, borderRadius: 36,
+              backgroundColor: "#141414",
+              alignItems: "center", justifyContent: "center",
+              marginBottom: 24,
+              borderWidth: 1, borderColor: "#FF5C00",
+            }}>
+              <Feather name={step === "uploading" ? "upload-cloud" : "cpu"} size={28} color="#FF5C00" />
+            </View>
+            <Text style={{ color: "#F5F0E8", fontSize: 22, fontFamily: "Rajdhani_700Bold", letterSpacing: 0.5, marginBottom: 8 }}>
+              {step === "uploading" ? "UPLOADING" : "ANALYZING"}
             </Text>
-            <Text className="text-zinc-500 text-sm mt-2 text-center">
-              {step === "uploading"
-                ? "Sending your video to Rockie."
-                : "This takes about 30–60 seconds."}
+            <Text style={{ color: "#888888", fontSize: 14, fontFamily: "Inter_400Regular", marginBottom: 32, textAlign: "center" }}>
+              {statusText}
             </Text>
-          </>
+            <View style={{ width: "100%", marginBottom: 12 }}>
+              <ProgressBar progress={step === "processing" ? 100 : progress} />
+            </View>
+            {step === "uploading" && (
+              <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular" }}>
+                {progress}% complete
+              </Text>
+            )}
+            {step === "processing" && (
+              <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular" }}>
+                This takes about 30–60 seconds
+              </Text>
+            )}
+          </View>
         )}
+
         {step === "error" && (
-          <>
-            <Text className="text-red-400 text-xl font-bold mb-3">Something went wrong</Text>
-            <Text className="text-zinc-400 text-sm text-center mb-8">{errorMsg}</Text>
-            <TouchableOpacity className="bg-zinc-800 rounded-xl px-6 py-3" onPress={reset}>
-              <Text className="text-white font-medium">Try again</Text>
+          <View style={{ alignItems: "center", width: "100%" }}>
+            <View style={{
+              width: 72, height: 72, borderRadius: 36,
+              backgroundColor: "#FF174422",
+              alignItems: "center", justifyContent: "center",
+              marginBottom: 24,
+              borderWidth: 1, borderColor: "#FF1744",
+            }}>
+              <Feather name="alert-circle" size={28} color="#FF1744" />
+            </View>
+            <Text style={{ color: "#FF1744", fontSize: 22, fontFamily: "Rajdhani_700Bold", marginBottom: 8 }}>
+              SOMETHING WENT WRONG
+            </Text>
+            <Text style={{ color: "#888888", fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", marginBottom: 32 }}>
+              {errorMsg}
+            </Text>
+            <TouchableOpacity
+              onPress={reset}
+              style={{
+                backgroundColor: "#141414", borderRadius: 12, paddingHorizontal: 24, paddingVertical: 14,
+                borderWidth: 1, borderColor: "#222222",
+              }}
+            >
+              <Text style={{ color: "#F5F0E8", fontSize: 15, fontFamily: "Inter_600SemiBold" }}>Try again</Text>
             </TouchableOpacity>
-          </>
+          </View>
         )}
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-1 justify-center px-6">
-        <Text className="text-white text-3xl font-bold mb-2">Analyze a climb</Text>
-        <Text className="text-zinc-400 text-base mb-10">
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
+      <View style={{ flex: 1, paddingHorizontal: 20, justifyContent: "center" }}>
+        <Text style={{ color: "#F5F0E8", fontSize: 32, fontFamily: "Rajdhani_700Bold", letterSpacing: 1, marginBottom: 6 }}>
+          ANALYZE A CLIMB
+        </Text>
+        <Text style={{ color: "#888888", fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 40, lineHeight: 22 }}>
           Record or pick a video. We'll score your technique and show you what to fix.
         </Text>
 
+        {/* Record button */}
         <TouchableOpacity
-          className="bg-green-500 rounded-2xl py-5 items-center mb-4"
           onPress={recordAndAnalyze}
+          style={{
+            backgroundColor: "#FF5C00",
+            borderRadius: 16,
+            paddingVertical: 20,
+            paddingHorizontal: 24,
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
         >
-          <Text className="text-white font-bold text-base">📹  Record a climb</Text>
+          <View style={{
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: "rgba(255,255,255,0.2)",
+            alignItems: "center", justifyContent: "center",
+            marginRight: 14,
+          }}>
+            <Feather name="video" size={20} color="#fff" />
+          </View>
+          <View>
+            <Text style={{ color: "#fff", fontSize: 17, fontFamily: "Rajdhani_700Bold", letterSpacing: 0.5 }}>
+              RECORD A CLIMB
+            </Text>
+            <Text style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, fontFamily: "Inter_400Regular" }}>
+              Use your camera
+            </Text>
+          </View>
         </TouchableOpacity>
 
+        {/* Library button */}
         <TouchableOpacity
-          className="bg-zinc-900 border border-zinc-700 rounded-2xl py-5 items-center"
           onPress={pickAndAnalyze}
+          style={{
+            backgroundColor: "#141414",
+            borderRadius: 16,
+            paddingVertical: 20,
+            paddingHorizontal: 24,
+            flexDirection: "row",
+            alignItems: "center",
+            borderWidth: 1,
+            borderColor: "#222222",
+          }}
         >
-          <Text className="text-white font-medium text-base">🎞  Pick from library</Text>
+          <View style={{
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: "#1E1E1E",
+            alignItems: "center", justifyContent: "center",
+            marginRight: 14,
+            borderWidth: 1, borderColor: "#222222",
+          }}>
+            <Feather name="film" size={20} color="#888888" />
+          </View>
+          <View>
+            <Text style={{ color: "#F5F0E8", fontSize: 17, fontFamily: "Rajdhani_700Bold", letterSpacing: 0.5 }}>
+              PICK FROM LIBRARY
+            </Text>
+            <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular" }}>
+              Choose an existing video
+            </Text>
+          </View>
         </TouchableOpacity>
 
-        <Text className="text-zinc-600 text-xs text-center mt-8">
+        <Text style={{ color: "#444444", fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 24 }}>
           Max 5 minutes · MP4 or MOV
         </Text>
       </View>

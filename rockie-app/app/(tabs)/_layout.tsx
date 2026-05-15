@@ -1,13 +1,23 @@
 import { Tabs } from "expo-router";
-import { View, Text } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { View } from "react-native";
 
-function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
+function RecordTabIcon({ color, focused }: { color: string; focused: boolean }) {
   return (
-    <View className="items-center pt-1">
-      <Text style={{ fontSize: 20 }}>{emoji}</Text>
-      <Text className={`text-xs mt-0.5 ${focused ? "text-green-400" : "text-zinc-500"}`}>
-        {label}
-      </Text>
+    <View
+      style={{
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: focused ? "#FF5C00" : "#1E1E1E",
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: 4,
+        borderWidth: focused ? 0 : 1,
+        borderColor: "#222222",
+      }}
+    >
+      <Feather name="video" size={20} color={focused ? "#fff" : color} />
     </View>
   );
 }
@@ -18,30 +28,48 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: "#09090b",
-          borderTopColor: "#27272a",
-          height: 80,
-          paddingBottom: 12,
+          backgroundColor: "#0A0A0A",
+          borderTopColor: "#222222",
+          height: 84,
+          paddingBottom: 20,
+          paddingTop: 8,
         },
-        tabBarShowLabel: false,
+        tabBarActiveTintColor: "#FF5C00",
+        tabBarInactiveTintColor: "#888888",
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: "500",
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🧗" label="Home" focused={focused} />,
+          title: "Record",
+          tabBarIcon: ({ color }) => <Feather name="activity" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="upload"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📹" label="Analyze" focused={focused} />,
+          title: "Analyze",
+          tabBarIcon: ({ focused }) => <RecordTabIcon color="#888888" focused={focused} />,
+          tabBarLabel: () => null,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="History" focused={focused} />,
+          title: "Progress",
+          tabBarIcon: ({ color }) => <Feather name="trending-up" size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} />,
         }}
       />
     </Tabs>

@@ -19,7 +19,10 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Rockie uses your camera to record climbing sessions.",
         "NSPhotoLibraryUsageDescription": "Rockie accesses your photo library to select climbing videos.",
-        "NSMicrophoneUsageDescription": "Rockie records audio during climbing sessions."
+        "NSMicrophoneUsageDescription": "Rockie records audio during climbing sessions.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
@@ -50,7 +53,9 @@
         {
           "photosPermission": "Rockie accesses your photo library to select climbing videos."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-font"
     ]
   }
 }

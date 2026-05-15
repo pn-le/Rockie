@@ -1,3 +1,4 @@
+import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -8,6 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Video, ResizeMode } from "expo-av";
 import { supabase } from "../../lib/supabase";
@@ -23,38 +25,90 @@ type Result = {
 };
 
 function ScoreRing({ score }: { score: number }) {
-  const color = score >= 75 ? "#22c55e" : score >= 50 ? "#eab308" : "#ef4444";
+  const size = 160;
+  const strokeWidth = 10;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = circumference - (score / 100) * circumference;
+  const color = score >= 75 ? "#00C853" : score >= 50 ? "#FF5C00" : "#FF1744";
+
   return (
-    <View className="items-center py-8">
-      <View
-        style={{
-          width: 140,
-          height: 140,
-          borderRadius: 70,
-          borderWidth: 8,
-          borderColor: color,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text style={{ color: "white", fontSize: 40, fontWeight: "bold" }}>
-          {Math.round(score)}
-        </Text>
-        <Text style={{ color: "#71717a", fontSize: 14 }}>/100</Text>
+    <View style={{ alignItems: "center", paddingVertical: 32 }}>
+      <View style={{ position: "relative", width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+        <Svg width={size} height={size} style={{ position: "absolute" }}>
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#1E1E1E"
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={progress}
+            strokeLinecap="round"
+            transform={`rotate(-90, ${size / 2}, ${size / 2})`}
+          />
+        </Svg>
+        <View style={{ alignItems: "center" }}>
+          <Text style={{ color: "#F5F0E8", fontSize: 44, fontFamily: "Rajdhani_700Bold", lineHeight: 48 }}>
+            {Math.round(score)}
+          </Text>
+          <Text style={{ color: "#888888", fontSize: 13, fontFamily: "Inter_500Medium" }}>/ 100</Text>
+        </View>
       </View>
-      <Text className="text-zinc-400 text-sm mt-3">Efficiency Score</Text>
+      <Text style={{ color: "#888888", fontSize: 11, fontFamily: "Inter_500Medium", letterSpacing: 1.5, textTransform: "uppercase", marginTop: 8 }}>
+        EFFICIENCY SCORE
+      </Text>
     </View>
   );
 }
 
-function EventPill({ label, count, bad }: { label: string; count: number; bad: boolean }) {
-  const active = count > 0 && bad;
+function BreakdownBar({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = Math.min(100, (value / max) * 100);
+  const color = "#2979FF";
   return (
-    <View className={`rounded-xl px-3 py-2 mr-2 mb-2 ${active ? "bg-red-950 border border-red-800" : "bg-zinc-900"}`}>
-      <Text className={`text-xs font-medium ${active ? "text-red-400" : "text-zinc-500"}`}>
+    <View style={{ marginBottom: 14 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+        <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 1 }}>
+          {label}
+        </Text>
+        <Text style={{ color: "#F5F0E8", fontSize: 12, fontFamily: "Rajdhani_700Bold" }}>
+          {value}
+        </Text>
+      </View>
+      <View style={{ height: 4, backgroundColor: "#1E1E1E", borderRadius: 2, overflow: "hidden" }}>
+        <View style={{ height: "100%", width: `${pct}%`, backgroundColor: color, borderRadius: 2 }} />
+      </View>
+    </View>
+  );
+}
+
+function EventPill({ label, count }: { label: string; count: number }) {
+  const active = count > 0;
+  return (
+    <View style={{
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginRight: 8,
+      marginBottom: 8,
+      backgroundColor: active ? "#FF174422" : "#141414",
+      borderWidth: 1,
+      borderColor: active ? "#FF174466" : "#222222",
+      minWidth: 80,
+    }}>
+      <Text style={{ color: active ? "#FF1744" : "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>
         {label}
       </Text>
-      <Text className={`text-lg font-bold ${active ? "text-red-300" : "text-zinc-400"}`}>
+      <Text style={{ color: active ? "#FF1744" : "#888888", fontSize: 22, fontFamily: "Rajdhani_700Bold" }}>
         {count}
       </Text>
     </View>
@@ -82,18 +136,20 @@ export default function ResultScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-black items-center justify-center">
-        <ActivityIndicator size="large" color="#22c55e" />
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0A0A", alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" color="#FF5C00" />
       </SafeAreaView>
     );
   }
 
   if (!result) {
     return (
-      <SafeAreaView className="flex-1 bg-black items-center justify-center px-6">
-        <Text className="text-zinc-400 text-base text-center">No result found.</Text>
-        <TouchableOpacity className="mt-6" onPress={() => router.back()}>
-          <Text className="text-green-400">Go back</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0A0A", alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
+        <Text style={{ color: "#888888", fontSize: 15, fontFamily: "Inter_400Regular", textAlign: "center", marginBottom: 20 }}>
+          No result found.
+        </Text>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={{ color: "#FF5C00", fontFamily: "Inter_600SemiBold" }}>Go back</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -101,38 +157,59 @@ export default function ResultScreen() {
 
   const clipUrl = result.clips[activeClip];
   const availableClips = Object.entries(result.clips).filter(([, url]) => !!url) as [string, string][];
+  const clipLabels: Record<string, string> = { full: "Full", crux: "Crux", best_sequence: "Best" };
+
+  const totalEvents = (result.events.hip_drops ?? 0) + (result.events.barn_doors ?? 0) +
+    (result.events.foot_swaps ?? 0) + (result.events.shake_events ?? 0);
+  const maxEvent = Math.max(1, result.events.hip_drops, result.events.barn_doors, result.events.foot_swaps, result.events.shake_events);
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-row items-center px-5 pt-2 pb-2">
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text className="text-green-400 text-base">← Back</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
+      {/* Back */}
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Feather name="chevron-left" size={20} color="#FF5C00" />
+          <Text style={{ color: "#FF5C00", fontSize: 15, fontFamily: "Inter_600SemiBold" }}>Back</Text>
         </TouchableOpacity>
+        <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular", marginLeft: "auto" }}>
+          {result.processed_at ? new Date(result.processed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+        </Text>
       </View>
 
-      <ScrollView className="flex-1">
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Score ring */}
         <ScoreRing score={result.efficiency_score} />
 
-        {/* Clip player */}
+        {/* Video player */}
         {clipUrl && (
-          <View className="mx-5 mb-4">
+          <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
             <Video
               source={{ uri: clipUrl }}
-              style={{ width: width - 40, height: (width - 40) * 0.56, borderRadius: 16 }}
+              style={{ width: width - 40, height: (width - 40) * 0.5625, borderRadius: 14 }}
               useNativeControls
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay={false}
             />
             {availableClips.length > 1 && (
-              <View className="flex-row mt-3">
+              <View style={{ flexDirection: "row", marginTop: 10, gap: 8 }}>
                 {availableClips.map(([key]) => (
                   <TouchableOpacity
                     key={key}
-                    className={`mr-2 px-4 py-2 rounded-xl ${activeClip === key ? "bg-green-500" : "bg-zinc-900"}`}
                     onPress={() => setActiveClip(key as any)}
+                    style={{
+                      paddingHorizontal: 16, paddingVertical: 8,
+                      borderRadius: 8,
+                      backgroundColor: activeClip === key ? "#FF5C00" : "#141414",
+                      borderWidth: 1,
+                      borderColor: activeClip === key ? "#FF5C00" : "#222222",
+                    }}
                   >
-                    <Text className={`text-sm font-medium ${activeClip === key ? "text-white" : "text-zinc-400"}`}>
-                      {key === "best_sequence" ? "Best" : key.charAt(0).toUpperCase() + key.slice(1)}
+                    <Text style={{
+                      color: activeClip === key ? "#fff" : "#888888",
+                      fontSize: 13,
+                      fontFamily: "Inter_600SemiBold",
+                    }}>
+                      {clipLabels[key] ?? key}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -141,22 +218,52 @@ export default function ResultScreen() {
           </View>
         )}
 
-        {/* Feedback */}
-        <View className="mx-5 mb-4 bg-zinc-900 rounded-2xl p-4">
-          <Text className="text-zinc-400 text-xs uppercase tracking-widest mb-3">Feedback</Text>
-          <Text className="text-white text-base leading-6">{result.feedback_text}</Text>
+        {/* AI Feedback */}
+        <View style={{
+          marginHorizontal: 20, marginBottom: 16,
+          backgroundColor: "#141414",
+          borderRadius: 16, padding: 16,
+          borderWidth: 1, borderColor: "#222222",
+          borderLeftWidth: 3, borderLeftColor: "#2979FF",
+        }}>
+          <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
+            AI FEEDBACK
+          </Text>
+          <Text style={{ color: "#F5F0E8", fontSize: 15, fontFamily: "Inter_400Regular", lineHeight: 24 }}>
+            {result.feedback_text}
+          </Text>
         </View>
 
         {/* Events */}
-        <View className="mx-5 mb-8">
-          <Text className="text-zinc-400 text-xs uppercase tracking-widest mb-3">Events detected</Text>
-          <View className="flex-row flex-wrap">
-            <EventPill label="Hip drops" count={result.events.hip_drops} bad />
-            <EventPill label="Barn doors" count={result.events.barn_doors} bad />
-            <EventPill label="Foot swaps" count={result.events.foot_swaps} bad />
-            <EventPill label="Arm shake" count={result.events.shake_events} bad />
+        <View style={{ marginHorizontal: 20, marginBottom: 16 }}>
+          <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12 }}>
+            EVENTS DETECTED
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            <EventPill label="Hip drops" count={result.events.hip_drops ?? 0} />
+            <EventPill label="Barn doors" count={result.events.barn_doors ?? 0} />
+            <EventPill label="Foot swaps" count={result.events.foot_swaps ?? 0} />
+            <EventPill label="Arm shake" count={result.events.shake_events ?? 0} />
           </View>
         </View>
+
+        {/* Breakdown */}
+        {totalEvents > 0 && (
+          <View style={{
+            marginHorizontal: 20,
+            backgroundColor: "#141414",
+            borderRadius: 16, padding: 16,
+            borderWidth: 1, borderColor: "#222222",
+          }}>
+            <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 16 }}>
+              BREAKDOWN
+            </Text>
+            <BreakdownBar label="Hip drops" value={result.events.hip_drops ?? 0} max={maxEvent} />
+            <BreakdownBar label="Barn doors" value={result.events.barn_doors ?? 0} max={maxEvent} />
+            <BreakdownBar label="Foot swaps" value={result.events.foot_swaps ?? 0} max={maxEvent} />
+            <BreakdownBar label="Arm shake" value={result.events.shake_events ?? 0} max={maxEvent} />
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

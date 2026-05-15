@@ -42,8 +42,11 @@ export default function SignUp() {
     setError("");
     try {
       const result = await signUp.attemptEmailAddressVerification({ code });
+      if (result.status !== "complete") {
+        setError(`Sign up incomplete: ${result.status}`);
+        return;
+      }
       await setActive({ session: result.createdSessionId });
-      router.replace("/(tabs)");
     } catch (e: any) {
       setError(e.errors?.[0]?.message ?? "Verification failed");
     } finally {
@@ -51,76 +54,81 @@ export default function SignUp() {
     }
   }
 
+  const inputStyle = {
+    backgroundColor: "#141414", color: "#F5F0E8",
+    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 16,
+    fontSize: 15, fontFamily: "Inter_400Regular",
+    marginBottom: 10, borderWidth: 1, borderColor: "#222222",
+  };
+
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-black"
+      style={{ flex: 1, backgroundColor: "#0A0A0A" }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View className="flex-1 justify-center px-6">
-        <Text className="text-white text-4xl font-bold mb-2">Rockie</Text>
-        <Text className="text-zinc-400 text-base mb-10">
+      <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24 }}>
+        <Text style={{ color: "#F5F0E8", fontSize: 48, fontFamily: "Rajdhani_700Bold", letterSpacing: 2, marginBottom: 4 }}>
+          ROCKIE
+        </Text>
+        <Text style={{ color: "#888888", fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 40 }}>
           {step === "form" ? "Create your account." : "Check your email for a code."}
         </Text>
 
         {step === "form" ? (
           <>
             <TextInput
-              className="bg-zinc-900 text-white rounded-xl px-4 py-4 mb-3 text-base"
+              style={inputStyle}
               placeholder="Email"
-              placeholderTextColor="#71717a"
+              placeholderTextColor="#888888"
               autoCapitalize="none"
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
             />
             <TextInput
-              className="bg-zinc-900 text-white rounded-xl px-4 py-4 mb-4 text-base"
+              style={{ ...inputStyle, marginBottom: 16 }}
               placeholder="Password"
-              placeholderTextColor="#71717a"
+              placeholderTextColor="#888888"
               secureTextEntry
               value={password}
               onChangeText={setPassword}
             />
-            {error ? <Text className="text-red-400 text-sm mb-3">{error}</Text> : null}
+            {error ? <Text style={{ color: "#FF1744", fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 12 }}>{error}</Text> : null}
             <TouchableOpacity
-              className="bg-green-500 rounded-xl py-4 items-center"
+              style={{ backgroundColor: "#FF5C00", borderRadius: 12, paddingVertical: 18, alignItems: "center" }}
               onPress={handleSignUp}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-white font-semibold text-base">Create account</Text>
+              {loading ? <ActivityIndicator color="white" /> : (
+                <Text style={{ color: "#fff", fontSize: 16, fontFamily: "Rajdhani_700Bold", letterSpacing: 1 }}>CREATE ACCOUNT</Text>
               )}
             </TouchableOpacity>
-            <View className="flex-row justify-center mt-6">
-              <Text className="text-zinc-500">Already have an account? </Text>
+            <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 24 }}>
+              <Text style={{ color: "#888888", fontSize: 14, fontFamily: "Inter_400Regular" }}>Already have an account? </Text>
               <Link href="/(auth)/sign-in">
-                <Text className="text-green-400">Sign in</Text>
+                <Text style={{ color: "#FF5C00", fontSize: 14, fontFamily: "Inter_600SemiBold" }}>Sign in</Text>
               </Link>
             </View>
           </>
         ) : (
           <>
             <TextInput
-              className="bg-zinc-900 text-white rounded-xl px-4 py-4 mb-4 text-base text-center tracking-widest"
+              style={{ ...inputStyle, textAlign: "center", letterSpacing: 8, fontSize: 24, marginBottom: 16 }}
               placeholder="000000"
-              placeholderTextColor="#71717a"
+              placeholderTextColor="#888888"
               keyboardType="number-pad"
               maxLength={6}
               value={code}
               onChangeText={setCode}
             />
-            {error ? <Text className="text-red-400 text-sm mb-3">{error}</Text> : null}
+            {error ? <Text style={{ color: "#FF1744", fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 12 }}>{error}</Text> : null}
             <TouchableOpacity
-              className="bg-green-500 rounded-xl py-4 items-center"
+              style={{ backgroundColor: "#FF5C00", borderRadius: 12, paddingVertical: 18, alignItems: "center" }}
               onPress={handleVerify}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-white font-semibold text-base">Verify</Text>
+              {loading ? <ActivityIndicator color="white" /> : (
+                <Text style={{ color: "#fff", fontSize: 16, fontFamily: "Rajdhani_700Bold", letterSpacing: 1 }}>VERIFY</Text>
               )}
             </TouchableOpacity>
           </>

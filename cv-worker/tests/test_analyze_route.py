@@ -113,6 +113,80 @@ class TestRunAnalysis:
         assert "processed_at" in result
 
     @pytest.mark.asyncio
+    async def test_run_analysis_includes_skeleton_frames(self, mock_db, mock_pipeline):
+        """Ghost Mode: result must contain skeleton_frames list."""
+        db = mock_pipeline["fake_db"]
+        from api.routes.analyze import run_analysis
+        await run_analysis("job-001", "https://signed/video.mp4", "user-001", None)
+
+        update_calls = db.table.return_value.update.call_args_list
+        complete_call = next(c for c in update_calls if c.args[0].get("status") == "complete")
+        result = complete_call.args[0]["result"]
+
+        assert "skeleton_frames" in result
+        assert isinstance(result["skeleton_frames"], list)
+        assert len(result["skeleton_frames"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_skeleton_frames_structure(self, mock_db, mock_pipeline):
+        """Each skeleton frame must have 't' (float) and 'pts' (13 [x,y] pairs)."""
+        db = mock_pipeline["fake_db"]
+        from api.routes.analyze import run_analysis
+        await run_analysis("job-001", "https://signed/video.mp4", "user-001", None)
+
+        update_calls = db.table.return_value.update.call_args_list
+        complete_call = next(c for c in update_calls if c.args[0].get("status") == "complete")
+        frame = complete_call.args[0]["result"]["skeleton_frames"][0]
+
+        assert "t" in frame
+        assert isinstance(frame["t"], float)
+        assert "pts" in frame
+        assert len(frame["pts"]) == 13
+        for pt in frame["pts"]:
+            assert len(pt) == 2
+            x, y = pt
+            assert 0.0 <= x <= 1.0, f"x={x} out of normalized range"
+            assert 0.0 <= y <= 1.0, f"y={y} out of normalized range"
+
+    @pytest.mark.asyncio
+    async def test_skeleton_frames_sorted_by_timestamp(self, mock_db, mock_pipeline):
+        """Skeleton frames must be in chronological order."""
+        from api.models.pose import FrameLandmarks, Landmark
+        multi_frame = [
+            FrameLandmarks(
+                frame_index=i * 3,
+                timestamp_sec=round(i * 0.1, 3),
+                landmarks=[Landmark(x=0.5, y=0.5, z=0.0, visibility=0.9)] * 33,
+            )
+            for i in range(5)
+        ]
+        mock_pipeline["extract"].return_value = multi_frame
+
+        db = mock_pipeline["fake_db"]
+        from api.routes.analyze import run_analysis
+        await run_analysis("job-001", "https://signed/video.mp4", "user-001", None)
+
+        update_calls = db.table.return_value.update.call_args_list
+        complete_call = next(c for c in update_calls if c.args[0].get("status") == "complete")
+        frames = complete_call.args[0]["result"]["skeleton_frames"]
+
+        timestamps = [f["t"] for f in frames]
+        assert timestamps == sorted(timestamps)
+
+    @pytest.mark.asyncio
+    async def test_result_includes_fatigue_field(self, mock_db, mock_pipeline):
+        """Fatigue detection result must always be present in result (even if None)."""
+        db = mock_pipeline["fake_db"]
+        from api.routes.analyze import run_analysis
+        await run_analysis("job-001", "https://signed/video.mp4", "user-001", None)
+
+        update_calls = db.table.return_value.update.call_args_list
+        complete_call = next(c for c in update_calls if c.args[0].get("status") == "complete")
+        result = complete_call.args[0]["result"]
+
+        assert "fatigue" in result
+
+    @pytest.mark.asyncio
     async def test_run_analysis_updates_session_score(self, mock_db, mock_pipeline):
         db = mock_pipeline["fake_db"]
         from api.routes.analyze import run_analysis

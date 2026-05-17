@@ -222,3 +222,5 @@ cv-worker/tests/fixtures/*.mov
 cv-worker/tests/fixtures/*.mp4
 cv-worker/tests/fixtures/*.avi
 cv-worker/tests/fixtures/*.webm
+!rockie-app/lib/
+!rockie-app/tests/

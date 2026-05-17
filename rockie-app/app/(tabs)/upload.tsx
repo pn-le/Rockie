@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   Alert,
   Animated,
@@ -36,6 +37,7 @@ export default function Upload() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [routeName, setRouteName] = useState("");
 
   async function pickAndAnalyze() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -102,11 +104,41 @@ export default function Upload() {
 
       setProgress(70);
       setStatusText("Queuing analysis…");
+
+      let routeId: string | null = null;
+      let attemptNum = 1;
+      const trimmedName = routeName.trim();
+      if (trimmedName) {
+        const { data: existingRoute } = await supabase
+          .from("routes")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("name", trimmedName)
+          .single();
+        if (existingRoute) {
+          routeId = existingRoute.id;
+          const { count } = await supabase
+            .from("analysis_jobs")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("route_id", routeId);
+          attemptNum = (count ?? 0) + 1;
+        } else {
+          const { data: newRoute } = await supabase
+            .from("routes")
+            .insert({ user_id: user.id, name: trimmedName })
+            .select("id")
+            .single();
+          routeId = newRoute?.id ?? null;
+        }
+      }
+
       await supabase.from("analysis_jobs").insert({
         id,
         user_id: user.id,
         video_url: signedData.signedUrl,
         status: "queued",
+        ...(routeId && { route_id: routeId, attempt_num: attemptNum }),
       });
 
       await triggerAnalysis({ jobId: id, videoUrl: signedData.signedUrl, userId: user.id });
@@ -148,6 +180,7 @@ export default function Upload() {
     setProgress(0);
     setStatusText("");
     setErrorMsg("");
+    setRouteName("");
   }
 
   if (step !== "idle") {
@@ -224,9 +257,29 @@ export default function Upload() {
         <Text style={{ color: "#F5F0E8", fontSize: 32, fontFamily: "Rajdhani_700Bold", letterSpacing: 1, marginBottom: 6 }}>
           ANALYZE A CLIMB
         </Text>
-        <Text style={{ color: "#888888", fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 40, lineHeight: 22 }}>
+        <Text style={{ color: "#888888", fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 32, lineHeight: 22 }}>
           Record or pick a video. We'll score your technique and show you what to fix.
         </Text>
+
+        {/* Optional route name */}
+        <TextInput
+          value={routeName}
+          onChangeText={setRouteName}
+          placeholder="Route name (optional)"
+          placeholderTextColor="#444444"
+          style={{
+            backgroundColor: "#141414",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: routeName.trim() ? "#FF5C0066" : "#222222",
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            color: "#F5F0E8",
+            fontSize: 15,
+            fontFamily: "Inter_400Regular",
+            marginBottom: 24,
+          }}
+        />
 
         {/* Record button */}
         <TouchableOpacity

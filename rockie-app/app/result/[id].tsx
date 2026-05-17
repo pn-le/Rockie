@@ -1,20 +1,33 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
   Dimensions,
 } from "react-native";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Line, G } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Video, ResizeMode } from "expo-av";
+import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import { supabase } from "../../lib/supabase";
 
 const { width } = Dimensions.get("window");
+
+type SkeletonFrame = {
+  t: number;
+  pts: [number, number][];
+};
+
+type RouteAttempt = {
+  id: string;
+  attempt_num: number;
+  efficiency_score: number;
+  processed_at: string;
+};
 
 type FatigueInfo = {
   detected: boolean;
@@ -31,6 +44,7 @@ type Result = {
   events: { hip_drops: number; barn_doors: number; foot_swaps: number; shake_events: number };
   processed_at: string;
   fatigue?: FatigueInfo | null;
+  skeleton_frames?: SkeletonFrame[];
 };
 
 function ScoreRing({ score }: { score: number }) {
@@ -124,6 +138,51 @@ function EventPill({ label, count }: { label: string; count: number }) {
   );
 }
 
+// Ghost Mode skeleton connections
+// pts indices: 0=nose, 1=Lshoulder, 2=Rshoulder, 3=Lelbow, 4=Relbow,
+//              5=Lwrist, 6=Rwrist, 7=Lhip, 8=Rhip, 9=Lknee, 10=Rknee, 11=Lankle, 12=Rankle
+const GHOST_CONNECTIONS: [number, number][] = [
+  [0, 1], [0, 2],
+  [1, 2],
+  [1, 3], [3, 5],
+  [2, 4], [4, 6],
+  [1, 7], [2, 8],
+  [7, 8],
+  [7, 9], [9, 11],
+  [8, 10], [10, 12],
+];
+
+function GhostSkeleton({ frame, videoW, videoH }: { frame: SkeletonFrame; videoW: number; videoH: number }) {
+  return (
+    <Svg
+      width={videoW}
+      height={videoH}
+      style={{ position: "absolute", top: 0, left: 0 }}
+      pointerEvents="none"
+    >
+      <G opacity={0.45}>
+        {GHOST_CONNECTIONS.map(([a, b], i) => {
+          const [ax, ay] = frame.pts[a] ?? [0, 0];
+          const [bx, by] = frame.pts[b] ?? [0, 0];
+          return (
+            <Line
+              key={i}
+              x1={ax * videoW} y1={ay * videoH}
+              x2={bx * videoW} y2={by * videoH}
+              stroke="#FFFFFF"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+            />
+          );
+        })}
+        {frame.pts.map(([x, y], i) => (
+          <Circle key={i} cx={x * videoW} cy={y * videoH} r={3} fill="#FFFFFF" />
+        ))}
+      </G>
+    </Svg>
+  );
+}
+
 export default function ResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -131,17 +190,67 @@ export default function ResultScreen() {
   const [loading, setLoading] = useState(true);
   const [activeClip, setActiveClip] = useState<"full" | "crux" | "best_sequence">("full");
 
+  // Ghost Mode
+  const videoRef = useRef<Video>(null);
+  const [routeAttempts, setRouteAttempts] = useState<RouteAttempt[]>([]);
+  const [ghostPickerVisible, setGhostPickerVisible] = useState(false);
+  const [ghostFrames, setGhostFrames] = useState<SkeletonFrame[] | null>(null);
+  const [ghostEnabled, setGhostEnabled] = useState(false);
+  const [videoTimeSec, setVideoTimeSec] = useState(0);
+
   useEffect(() => {
     supabase
       .from("analysis_jobs")
-      .select("result")
+      .select("result, route_id")
       .eq("id", id)
       .single()
       .then(({ data }) => {
         if (data?.result) setResult(data.result as Result);
+        if (data?.route_id) {
+          supabase
+            .from("analysis_jobs")
+            .select("id, attempt_num, result")
+            .eq("route_id", data.route_id)
+            .eq("status", "complete")
+            .neq("id", id)
+            .order("attempt_num", { ascending: true })
+            .then(({ data: attempts }) => {
+              if (attempts && attempts.length > 0) {
+                setRouteAttempts(attempts.map((j) => ({
+                  id: j.id,
+                  attempt_num: j.attempt_num ?? 1,
+                  efficiency_score: j.result?.efficiency_score ?? 0,
+                  processed_at: j.result?.processed_at ?? "",
+                })));
+              }
+            });
+        }
         setLoading(false);
       });
   }, [id]);
+
+  const ghostFrame = useMemo(() => {
+    if (!ghostEnabled || !ghostFrames || ghostFrames.length === 0) return null;
+    let best = ghostFrames[0];
+    for (const f of ghostFrames) {
+      if (Math.abs(f.t - videoTimeSec) < Math.abs(best.t - videoTimeSec)) best = f;
+    }
+    return best;
+  }, [ghostEnabled, ghostFrames, videoTimeSec]);
+
+  async function selectGhostAttempt(attemptId: string) {
+    setGhostPickerVisible(false);
+    const { data } = await supabase
+      .from("analysis_jobs")
+      .select("result")
+      .eq("id", attemptId)
+      .single();
+    const frames: SkeletonFrame[] | undefined = data?.result?.skeleton_frames;
+    if (frames && frames.length > 0) {
+      setGhostFrames(frames);
+      setGhostEnabled(true);
+    }
+  }
 
   if (loading) {
     return (
@@ -239,13 +348,58 @@ export default function ResultScreen() {
         {/* Video player */}
         {clipUrl && (
           <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-            <Video
-              source={{ uri: clipUrl }}
-              style={{ width: width - 40, height: (width - 40) * 0.5625, borderRadius: 14 }}
-              useNativeControls
-              resizeMode={ResizeMode.CONTAIN}
-              shouldPlay={false}
-            />
+            <View style={{ position: "relative" }}>
+              <Video
+                ref={videoRef}
+                source={{ uri: clipUrl }}
+                style={{ width: width - 40, height: (width - 40) * 0.5625, borderRadius: 14 }}
+                useNativeControls
+                resizeMode={ResizeMode.CONTAIN}
+                shouldPlay={false}
+                onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
+                  if (status.isLoaded) setVideoTimeSec(status.positionMillis / 1000);
+                }}
+              />
+              {ghostFrame && (
+                <GhostSkeleton
+                  frame={ghostFrame}
+                  videoW={width - 40}
+                  videoH={(width - 40) * 0.5625}
+                />
+              )}
+              {/* Ghost Mode toggle button */}
+              {routeAttempts.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (ghostEnabled) {
+                      setGhostEnabled(false);
+                      setGhostFrames(null);
+                    } else {
+                      setGhostPickerVisible(true);
+                    }
+                  }}
+                  style={{
+                    position: "absolute", top: 8, right: 8,
+                    backgroundColor: ghostEnabled ? "#00E5FF22" : "#0A0A0ACC",
+                    borderRadius: 8,
+                    paddingHorizontal: 10, paddingVertical: 6,
+                    borderWidth: 1,
+                    borderColor: ghostEnabled ? "#00E5FF" : "#333333",
+                    flexDirection: "row", alignItems: "center", gap: 5,
+                  }}
+                >
+                  <Feather name="users" size={12} color={ghostEnabled ? "#00E5FF" : "#888888"} />
+                  <Text style={{
+                    color: ghostEnabled ? "#00E5FF" : "#888888",
+                    fontSize: 11,
+                    fontFamily: "Inter_600SemiBold",
+                    letterSpacing: 0.5,
+                  }}>
+                    {ghostEnabled ? "GHOST ON" : "GHOST MODE"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
             {availableClips.length > 1 && (
               <View style={{ flexDirection: "row", marginTop: 10, gap: 8 }}>
                 {availableClips.map(([key]) => (
@@ -273,6 +427,66 @@ export default function ResultScreen() {
             )}
           </View>
         )}
+
+        {/* Ghost attempt picker modal */}
+        <Modal
+          visible={ghostPickerVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setGhostPickerVisible(false)}
+        >
+          <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "#000000AA" }}>
+            <View style={{
+              backgroundColor: "#141414",
+              borderTopLeftRadius: 24, borderTopRightRadius: 24,
+              padding: 24,
+              borderTopWidth: 1, borderColor: "#222222",
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}>
+                <Feather name="users" size={16} color="#00E5FF" />
+                <Text style={{ color: "#F5F0E8", fontSize: 16, fontFamily: "Rajdhani_700Bold", letterSpacing: 0.5, marginLeft: 8 }}>
+                  PICK A GHOST ATTEMPT
+                </Text>
+              </View>
+              {routeAttempts.map((attempt) => (
+                <TouchableOpacity
+                  key={attempt.id}
+                  onPress={() => selectGhostAttempt(attempt.id)}
+                  style={{
+                    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                    backgroundColor: "#1E1E1E",
+                    borderRadius: 12, padding: 16, marginBottom: 10,
+                    borderWidth: 1, borderColor: "#222222",
+                  }}
+                >
+                  <View>
+                    <Text style={{ color: "#F5F0E8", fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 2 }}>
+                      Attempt #{attempt.attempt_num}
+                    </Text>
+                    <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular" }}>
+                      {attempt.processed_at ? new Date(attempt.processed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                    </Text>
+                  </View>
+                  <View style={{
+                    backgroundColor: "#0A0A0A", borderRadius: 8,
+                    paddingHorizontal: 12, paddingVertical: 6,
+                    borderWidth: 1, borderColor: "#333333",
+                  }}>
+                    <Text style={{ color: "#00E5FF", fontSize: 18, fontFamily: "Rajdhani_700Bold" }}>
+                      {Math.round(attempt.efficiency_score)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                onPress={() => setGhostPickerVisible(false)}
+                style={{ marginTop: 8, alignItems: "center", paddingVertical: 14 }}
+              >
+                <Text style={{ color: "#888888", fontSize: 14, fontFamily: "Inter_500Medium" }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* AI Feedback */}
         <View style={{

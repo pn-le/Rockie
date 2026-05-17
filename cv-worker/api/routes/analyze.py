@@ -44,6 +44,16 @@ async def run_analysis(job_id: str, video_url: str, user_id: str, session_id: st
         # 2. CV pipeline
         landmarks = extract_pose(video_path)
         score, timeline, events = score_efficiency(landmarks)
+
+        # Serialize skeleton keyframes for Ghost Mode (13 key joints, normalized coords)
+        _GHOST_JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+        skeleton_frames = [
+            {
+                "t": round(f.timestamp_sec, 3),
+                "pts": [[round(f.landmarks[i].x, 4), round(f.landmarks[i].y, 4)] for i in _GHOST_JOINTS],
+            }
+            for f in landmarks
+        ]
         moments = detect_moments(frames=landmarks, timeline=timeline)
         clip_paths = annotate_clips(
             video_path=video_path,
@@ -67,6 +77,7 @@ async def run_analysis(job_id: str, video_url: str, user_id: str, session_id: st
             "events": events,
             "processed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "fatigue": fatigue,
+            "skeleton_frames": skeleton_frames,
         }
 
         db.table("analysis_jobs").update({

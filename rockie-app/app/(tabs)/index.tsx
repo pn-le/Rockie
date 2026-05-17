@@ -1,7 +1,7 @@
 import { useUser } from "@clerk/clerk-expo";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
@@ -10,8 +10,150 @@ type Job = {
   id: string;
   status: string;
   created_at: string;
-  result?: { efficiency_score: number; feedback_text: string };
+  grade?: string;
+  result?: {
+    efficiency_score: number;
+    feedback_text: string;
+    events?: { hip_drops: number; barn_doors: number; foot_swaps: number; shake_events: number };
+  };
 };
+
+const GRADES = ["V0","V1","V2","V3","V4","V5","V6","V7","V8","V9","V10","V11","V12"];
+
+type GradePrediction = {
+  ready: boolean;
+  currentGrade: string;
+  nextGrade: string | null;
+  reasons: string[];
+  watchOut: string | null;
+  effAtMax: number;
+  sendsAtMax: number;
+  totalGraded: number;
+};
+
+function computePrediction(jobs: Job[]): GradePrediction | null {
+  const graded = jobs.filter((j) => j.grade && j.result?.efficiency_score != null && j.status === "complete");
+  if (graded.length < 3) return null;
+
+  // Find current max grade (highest grade with ≥1 send at efficiency ≥55%)
+  let maxIdx = -1;
+  for (const g of graded) {
+    const idx = GRADES.indexOf(g.grade!);
+    if (idx > maxIdx && (g.result?.efficiency_score ?? 0) >= 55) maxIdx = idx;
+  }
+  if (maxIdx < 0) return null;
+  const currentGrade = GRADES[maxIdx];
+  const nextGrade = GRADES[maxIdx + 1] ?? null;
+
+  // Sends + avg efficiency at current max
+  const atMax = graded.filter((j) => j.grade === currentGrade);
+  const effAtMax = atMax.reduce((s, j) => s + (j.result?.efficiency_score ?? 0), 0) / atMax.length;
+  const sendsAtMax = atMax.length;
+
+  // 30d improvement rate
+  const thirtyAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const recent = jobs.filter((j) => j.status === "complete" && new Date(j.created_at).getTime() > thirtyAgo);
+  const older = jobs.filter((j) => j.status === "complete" && new Date(j.created_at).getTime() <= thirtyAgo).slice(-5);
+  const recentAvg = recent.length ? recent.reduce((s, j) => s + (j.result?.efficiency_score ?? 0), 0) / recent.length : 0;
+  const olderAvg = older.length ? older.reduce((s, j) => s + (j.result?.efficiency_score ?? 0), 0) / older.length : recentAvg;
+  const improvementRate = recentAvg - olderAvg;
+
+  // Weak point severity (climbs in recent 10 with 3+ events in any category)
+  const recent10 = [...jobs].filter((j) => j.status === "complete").slice(0, 10);
+  const weakCount = recent10.filter((j) => {
+    const e = j.result?.events;
+    return e && (e.hip_drops >= 3 || e.barn_doors >= 3 || e.shake_events >= 3);
+  }).length;
+
+  // Readiness thresholds
+  const ready = effAtMax >= 78 && improvementRate >= 5 && weakCount < 3 && sendsAtMax >= 3 && nextGrade !== null;
+
+  // Build reasons
+  const reasons: string[] = [];
+  if (effAtMax >= 78) reasons.push(`Efficiency at ${currentGrade} averages ${Math.round(effAtMax)}%`);
+  if (improvementRate >= 5) reasons.push(`+${Math.round(improvementRate)} pts improvement this month`);
+  if (sendsAtMax >= 3) reasons.push(`${sendsAtMax} sends at ${currentGrade}, solid base`);
+  if (reasons.length === 0) {
+    if (effAtMax > 0) reasons.push(`Efficiency at ${currentGrade} averages ${Math.round(effAtMax)}%`);
+    if (improvementRate > 0) reasons.push(`+${Math.round(improvementRate)} pts trend this month`);
+  }
+
+  // Watch out: most common event type
+  const totals = { hip_drops: 0, barn_doors: 0, shake_events: 0 };
+  for (const j of recent10) {
+    const e = j.result?.events;
+    if (e) {
+      totals.hip_drops += e.hip_drops ?? 0;
+      totals.barn_doors += e.barn_doors ?? 0;
+      totals.shake_events += e.shake_events ?? 0;
+    }
+  }
+  const maxEvent = Math.max(totals.hip_drops, totals.barn_doors, totals.shake_events);
+  let watchOut: string | null = null;
+  if (maxEvent > 0) {
+    if (totals.hip_drops === maxEvent) watchOut = "Hip drops — stay square on harder moves";
+    else if (totals.barn_doors === maxEvent) watchOut = "Barn doors — flag earlier before committing";
+    else watchOut = "Arm fatigue — work lock-off strength";
+  }
+
+  return { ready, currentGrade, nextGrade, reasons, watchOut, effAtMax, sendsAtMax, totalGraded: graded.length };
+}
+
+function GradePredictionCard({ prediction }: { prediction: GradePrediction }) {
+  return (
+    <View style={{
+      backgroundColor: "#141414",
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: prediction.ready ? "#FF5C0044" : "#222222",
+      borderLeftWidth: 3,
+      borderLeftColor: prediction.ready ? "#FF5C00" : "#2979FF",
+    }}>
+      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 6 }}>
+        <Feather name="trending-up" size={13} color={prediction.ready ? "#FF5C00" : "#2979FF"} />
+        <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1.5, textTransform: "uppercase" }}>
+          GRADE PREDICTION
+        </Text>
+      </View>
+
+      <Text style={{ color: "#F5F0E8", fontSize: 20, fontFamily: "Rajdhani_700Bold", letterSpacing: 0.5, marginBottom: 12 }}>
+        {prediction.ready
+          ? `You're ready to project ${prediction.nextGrade}`
+          : `Keep building at ${prediction.currentGrade}`}
+      </Text>
+
+      <View style={{ gap: 5, marginBottom: prediction.watchOut ? 12 : 0 }}>
+        {prediction.reasons.map((r, i) => (
+          <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
+            <Text style={{ color: prediction.ready ? "#00C853" : "#888888", fontSize: 12, marginTop: 1 }}>•</Text>
+            <Text style={{ color: "#888888", fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 }}>{r}</Text>
+          </View>
+        ))}
+        {!prediction.ready && prediction.effAtMax < 78 && (
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
+            <Text style={{ color: "#888888", fontSize: 12, marginTop: 1 }}>•</Text>
+            <Text style={{ color: "#888888", fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 }}>
+              Reach 78% avg efficiency at {prediction.currentGrade} ({Math.round(prediction.effAtMax)}% now)
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {prediction.watchOut && (
+        <View style={{ backgroundColor: "#0A0A0A", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: "#222222" }}>
+          <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1, textTransform: "uppercase", marginBottom: 3 }}>
+            WATCH OUT FOR
+          </Text>
+          <Text style={{ color: "#F5F0E8", fontSize: 13, fontFamily: "Inter_400Regular" }}>
+            {prediction.watchOut}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 function ScoreBadge({ score }: { score: number }) {
   const color = score >= 75 ? "#00C853" : score >= 50 ? "#FF5C00" : "#FF1744";
@@ -40,10 +182,10 @@ export default function Home() {
   async function fetchJobs() {
     const { data } = await supabase
       .from("analysis_jobs")
-      .select("id, status, created_at, result")
+      .select("id, status, created_at, grade, result")
       .eq("user_id", user?.id)
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(50);
     if (data) setJobs(data);
   }
 
@@ -59,6 +201,8 @@ export default function Home() {
   const avgScore = completed.length
     ? Math.round(completed.reduce((s, j) => s + (j.result?.efficiency_score ?? 0), 0) / completed.length)
     : null;
+
+  const prediction = useMemo(() => computePrediction(jobs), [jobs]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
@@ -104,6 +248,9 @@ export default function Home() {
             </View>
           </View>
         )}
+
+        {/* Grade prediction */}
+        {prediction && <GradePredictionCard prediction={prediction} />}
 
         {/* Hero CTA */}
         <TouchableOpacity
@@ -189,9 +336,16 @@ export default function Home() {
                 </Text>
               )}
             </View>
-            {job.result?.efficiency_score != null && (
-              <ScoreBadge score={job.result.efficiency_score} />
-            )}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {job.grade && (
+                <View style={{ backgroundColor: "#1E1E1E", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#333333" }}>
+                  <Text style={{ color: "#F5F0E8", fontSize: 11, fontFamily: "Rajdhani_700Bold" }}>{job.grade}</Text>
+                </View>
+              )}
+              {job.result?.efficiency_score != null && (
+                <ScoreBadge score={job.result.efficiency_score} />
+              )}
+            </View>
           </TouchableOpacity>
         ))}
       </ScrollView>

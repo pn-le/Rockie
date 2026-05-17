@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  ScrollView,
   Alert,
   Animated,
 } from "react-native";
@@ -38,6 +39,7 @@ export default function Upload() {
   const [statusText, setStatusText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [routeName, setRouteName] = useState("");
+  const [grade, setGrade] = useState("");
 
   async function pickAndAnalyze() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -139,6 +141,7 @@ export default function Upload() {
         video_url: signedData.signedUrl,
         status: "queued",
         ...(routeId && { route_id: routeId, attempt_num: attemptNum }),
+        ...(grade && { grade }),
       });
 
       await triggerAnalysis({ jobId: id, videoUrl: signedData.signedUrl, userId: user.id });
@@ -181,6 +184,7 @@ export default function Upload() {
     setStatusText("");
     setErrorMsg("");
     setRouteName("");
+    setGrade("");
   }
 
   if (step !== "idle") {
@@ -280,6 +284,39 @@ export default function Upload() {
             marginBottom: 24,
           }}
         />
+
+        {/* Grade picker */}
+        <View style={{ marginBottom: 28 }}>
+          <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10 }}>
+            GRADE (OPTIONAL)
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {["V0","V1","V2","V3","V4","V5","V6","V7","V8","V9","V10","V11","V12"].map((g) => (
+                <TouchableOpacity
+                  key={g}
+                  onPress={() => setGrade(grade === g ? "" : g)}
+                  style={{
+                    paddingHorizontal: 14, paddingVertical: 9,
+                    borderRadius: 10,
+                    backgroundColor: grade === g ? "#FF5C00" : "#141414",
+                    borderWidth: 1,
+                    borderColor: grade === g ? "#FF5C00" : "#222222",
+                  }}
+                >
+                  <Text style={{
+                    color: grade === g ? "#fff" : "#888888",
+                    fontSize: 13,
+                    fontFamily: "Rajdhani_700Bold",
+                    letterSpacing: 0.5,
+                  }}>
+                    {g}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
 
         {/* Record button */}
         <TouchableOpacity

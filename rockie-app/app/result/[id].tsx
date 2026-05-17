@@ -534,6 +534,41 @@ export default function ResultScreen() {
             <BreakdownBar label="Arm shake" value={result.events.shake_events ?? 0} max={maxEvent} />
           </View>
         )}
+
+        {/* Compare button */}
+        {routeAttempts.length > 0 && (
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: "/compare/[id]", params: { id } })}
+            style={{
+              marginHorizontal: 20,
+              marginTop: 16,
+              backgroundColor: "#141414",
+              borderRadius: 16, padding: 16,
+              borderWidth: 1, borderColor: "#222222",
+              flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={{
+                width: 40, height: 40, borderRadius: 12,
+                backgroundColor: "#1E1E1E",
+                alignItems: "center", justifyContent: "center",
+                borderWidth: 1, borderColor: "#2979FF44",
+              }}>
+                <Feather name="layers" size={18} color="#2979FF" />
+              </View>
+              <View>
+                <Text style={{ color: "#F5F0E8", fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 2 }}>
+                  Before / After
+                </Text>
+                <Text style={{ color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular" }}>
+                  Compare with {routeAttempts.length} previous {routeAttempts.length === 1 ? "attempt" : "attempts"}
+                </Text>
+              </View>
+            </View>
+            <Feather name="chevron-right" size={18} color="#888888" />
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

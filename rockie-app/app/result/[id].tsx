@@ -16,12 +16,21 @@ import { supabase } from "../../lib/supabase";
 
 const { width } = Dimensions.get("window");
 
+type FatigueInfo = {
+  detected: boolean;
+  session_peak: number;
+  rolling_avg: number;
+  drop_pct: number;
+  climb_count: number;
+};
+
 type Result = {
   efficiency_score: number;
   feedback_text: string;
   clips: { full?: string; crux?: string; best_sequence?: string };
   events: { hip_drops: number; barn_doors: number; foot_swaps: number; shake_events: number };
   processed_at: string;
+  fatigue?: FatigueInfo | null;
 };
 
 function ScoreRing({ score }: { score: number }) {
@@ -179,6 +188,53 @@ export default function ResultScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Score ring */}
         <ScoreRing score={result.efficiency_score} />
+
+        {/* Fatigue warning */}
+        {result.fatigue?.detected && (
+          <View style={{
+            marginHorizontal: 20, marginBottom: 20,
+            backgroundColor: "#FF5C0018",
+            borderRadius: 16, padding: 16,
+            borderWidth: 1, borderColor: "#FF5C0066",
+            borderLeftWidth: 3, borderLeftColor: "#FF5C00",
+          }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 }}>
+              <Feather name="alert-triangle" size={16} color="#FF5C00" />
+              <Text style={{ color: "#FF5C00", fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 1.5, textTransform: "uppercase" }}>
+                FATIGUE DETECTED
+              </Text>
+            </View>
+            <Text style={{ color: "#F5F0E8", fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 22, marginBottom: 14 }}>
+              Your efficiency has dropped {result.fatigue.drop_pct}% from your session peak. Consider resting before your next climb.
+            </Text>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1, backgroundColor: "#0A0A0A", borderRadius: 10, padding: 12, alignItems: "center" }}>
+                <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+                  PEAK
+                </Text>
+                <Text style={{ color: "#F5F0E8", fontSize: 22, fontFamily: "Rajdhani_700Bold" }}>
+                  {result.fatigue.session_peak}
+                </Text>
+              </View>
+              <View style={{ flex: 1, backgroundColor: "#0A0A0A", borderRadius: 10, padding: 12, alignItems: "center" }}>
+                <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+                  NOW (AVG)
+                </Text>
+                <Text style={{ color: "#FF5C00", fontSize: 22, fontFamily: "Rajdhani_700Bold" }}>
+                  {result.fatigue.rolling_avg}
+                </Text>
+              </View>
+              <View style={{ flex: 1, backgroundColor: "#0A0A0A", borderRadius: 10, padding: 12, alignItems: "center" }}>
+                <Text style={{ color: "#888888", fontSize: 10, fontFamily: "Inter_500Medium", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+                  DROP
+                </Text>
+                <Text style={{ color: "#FF1744", fontSize: 22, fontFamily: "Rajdhani_700Bold" }}>
+                  -{result.fatigue.drop_pct}%
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Video player */}
         {clipUrl && (

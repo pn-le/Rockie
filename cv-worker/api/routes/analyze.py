@@ -13,6 +13,7 @@ from ..services.moment_detector import detect_moments
 from ..services.clip_annotator import annotate_clips
 from ..services.storage import upload_clips
 from ..services.feedback_generator import generate_feedback
+from ..services.fatigue_detector import detect_fatigue
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -54,6 +55,7 @@ async def run_analysis(job_id: str, video_url: str, user_id: str, session_id: st
         )
         clip_urls = upload_clips(clip_paths, job_id)
         feedback = generate_feedback(score, events)
+        fatigue = detect_fatigue(db, user_id, score)
 
         duration_ms = int((time.monotonic() - start) * 1000)
         log.info("analysis.complete", score=score, duration_ms=duration_ms)
@@ -64,6 +66,7 @@ async def run_analysis(job_id: str, video_url: str, user_id: str, session_id: st
             "clips": clip_urls,
             "events": events,
             "processed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "fatigue": fatigue,
         }
 
         db.table("analysis_jobs").update({
